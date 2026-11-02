@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.key
 output/*.srt.tmp
+output/*_draft.*
