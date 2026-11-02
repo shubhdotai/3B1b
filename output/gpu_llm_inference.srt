@@ -1,0 +1,1051 @@
+1
+00:00:00,000 --> 00:00:02,383
+When you ask a large language model a question,
+
+2
+00:00:02,383 --> 00:00:04,309
+the answer appears one word at a time,
+
+3
+00:00:04,309 --> 00:00:05,982
+almost like someone is typing it.
+
+4
+00:00:06,200 --> 00:00:08,521
+Each of those little pieces of text,
+
+5
+00:00:08,521 --> 00:00:12,131
+called tokens, is the output of an enormous computation:
+
+6
+00:00:12,131 --> 00:00:16,257
+billions of multiplications, carried out on a chip called a GPU.
+
+7
+00:00:16,500 --> 00:00:18,728
+In this video, let's open up that chip:
+
+8
+00:00:18,728 --> 00:00:20,727
+from how the hardware is organized,
+
+9
+00:00:20,727 --> 00:00:24,154
+all the way up to the tricks that make modern chatbots fast.
+
+10
+00:00:24,400 --> 00:00:27,537
+And along the way we'll run into a surprising fact.
+
+11
+00:00:27,537 --> 00:00:30,613
+For most of the time a GPU spends generating text,
+
+12
+00:00:30,613 --> 00:00:32,520
+the bottleneck is not the math.
+
+13
+00:00:32,520 --> 00:00:34,796
+The arithmetic units sit mostly idle.
+
+14
+00:00:34,796 --> 00:00:37,626
+The real limit is something much more mundane:
+
+15
+00:00:37,626 --> 00:00:40,518
+how quickly you can move numbers out of memory.
+
+16
+00:00:40,767 --> 00:00:44,007
+To see why, let's start with a more basic question.
+
+17
+00:00:44,007 --> 00:00:47,820
+What even makes a GPU different from the CPU in your laptop?
+
+18
+00:00:51,067 --> 00:00:52,934
+A CPU is a brilliant generalist:
+
+19
+00:00:52,934 --> 00:00:54,860
+a handful of very powerful cores,
+
+20
+00:00:54,860 --> 00:00:59,528
+each surrounded by large caches and clever control logic that predicts branches,
+
+21
+00:00:59,528 --> 00:01:04,371
+reorders instructions, and does everything it can to finish a single stream of work
+
+22
+00:01:04,371 --> 00:01:05,539
+as fast as possible.
+
+23
+00:01:05,767 --> 00:01:07,395
+A GPU makes the opposite bet.
+
+24
+00:01:07,395 --> 00:01:10,989
+It strips each core down to little more than an arithmetic unit,
+
+25
+00:01:10,989 --> 00:01:13,010
+and then packs in thousands of them.
+
+26
+00:01:13,010 --> 00:01:15,368
+Any one of these cores is slow and simple,
+
+27
+00:01:15,368 --> 00:01:17,783
+but together they have enormous throughput.
+
+28
+00:01:18,000 --> 00:01:22,587
+Think of it as a few brilliant professors versus a stadium full of students
+
+29
+00:01:22,587 --> 00:01:24,911
+who each know how to multiply and add.
+
+30
+00:01:24,911 --> 00:01:28,336
+For a hard, sequential problem, you want the professors.
+
+31
+00:01:28,336 --> 00:01:31,272
+For millions of independent little calculations,
+
+32
+00:01:31,272 --> 00:01:33,229
+the stadium wins by a landslide.
+
+33
+00:01:33,467 --> 00:01:37,702
+And it just so happens that the core operation of neural networks is exactly
+
+34
+00:01:37,702 --> 00:01:40,154
+that kind of problem: matrix multiplication.
+
+35
+00:01:40,400 --> 00:01:44,407
+Each entry of the output is a dot product between one row of the
+
+36
+00:01:44,407 --> 00:01:47,036
+first matrix and one column of the second.
+
+37
+00:01:47,036 --> 00:01:49,603
+Crucially, no entry depends on any other.
+
+38
+00:01:49,603 --> 00:01:52,545
+So you can hand each one to a different worker,
+
+39
+00:01:52,545 --> 00:01:54,924
+and compute them all at the same time.
+
+40
+00:01:55,167 --> 00:01:56,935
+This is the whole reason GPUs,
+
+41
+00:01:56,935 --> 00:01:59,999
+originally built to color in pixels for video games,
+
+42
+00:01:59,999 --> 00:02:02,120
+ended up powering the AI revolution.
+
+43
+00:02:02,120 --> 00:02:06,894
+Shading millions of pixels and multiplying giant matrices turn out to be the same
+
+44
+00:02:06,894 --> 00:02:07,601
+kind of job.
+
+45
+00:02:10,833 --> 00:02:13,352
+Let's take a concrete example: NVIDIA's H100,
+
+46
+00:02:13,352 --> 00:02:17,103
+one of the workhorse chips for running large language models today.
+
+47
+00:02:17,333 --> 00:02:19,787
+Most of the chip is this repeating tile,
+
+48
+00:02:19,787 --> 00:02:22,364
+called a Streaming Multiprocessor, or S M.
+
+49
+00:02:22,364 --> 00:02:23,898
+The H100 has 132 of them.
+
+50
+00:02:23,898 --> 00:02:26,781
+Through the middle runs a 50 megabyte L2 cache,
+
+51
+00:02:26,781 --> 00:02:30,646
+shared by all of them. And right next to the chip sit stacks of
+
+52
+00:02:30,646 --> 00:02:32,425
+high bandwidth memory, H B M,
+
+53
+00:02:32,425 --> 00:02:36,168
+holding 80 gigabytes. This is where the model's weights live.
+
+54
+00:02:36,400 --> 00:02:37,985
+Let's zoom in on one SM.
+
+55
+00:02:37,985 --> 00:02:41,354
+It has four quadrants, each with its own scheduler,
+
+56
+00:02:41,354 --> 00:02:45,119
+a big register file, a few dozen simple arithmetic units,
+
+57
+00:02:45,119 --> 00:02:49,148
+the so-called CUDA cores, and one much more specialized unit:
+
+58
+00:02:49,148 --> 00:02:52,649
+a Tensor Core. Shared across the whole SM is a small,
+
+59
+00:02:52,649 --> 00:02:56,215
+fast scratchpad of memory, a couple hundred kilobytes,
+
+60
+00:02:56,215 --> 00:02:58,395
+that programmers manage directly.
+
+61
+00:02:58,633 --> 00:03:02,561
+The work given to a GPU is organized in a similar hierarchy.
+
+62
+00:03:02,561 --> 00:03:04,525
+The smallest unit is a thread:
+
+63
+00:03:04,525 --> 00:03:09,172
+one worker. Threads are bundled into groups of thirty two called warps,
+
+64
+00:03:09,172 --> 00:03:12,838
+which all execute the same instruction at the same time,
+
+65
+00:03:12,838 --> 00:03:16,700
+each on its own data. Warps are grouped into thread blocks,
+
+66
+00:03:16,700 --> 00:03:20,759
+each running on a single SM and sharing its scratchpad memory.
+
+67
+00:03:20,759 --> 00:03:22,592
+And the whole job, the grid,
+
+68
+00:03:22,592 --> 00:03:26,454
+can contain thousands of blocks, spread across all the SMs.
+
+69
+00:03:26,700 --> 00:03:30,133
+The Tensor Cores do almost all the heavy lifting for A I.
+
+70
+00:03:30,133 --> 00:03:33,325
+Instead of multiplying one pair of numbers at a time,
+
+71
+00:03:33,325 --> 00:03:35,614
+a Tensor Core takes in small matrices,
+
+72
+00:03:35,614 --> 00:03:38,927
+multiplies them, and adds the result to an accumulator,
+
+73
+00:03:38,927 --> 00:03:40,493
+all as a single operation.
+
+74
+00:03:40,733 --> 00:03:46,071
+Add it all up, and an H100 can perform roughly a thousand trillion floating
+
+75
+00:03:46,071 --> 00:03:50,057
+point operations every second, at sixteen bit precision.
+
+76
+00:03:50,057 --> 00:03:52,619
+That's a petaflop, on a single chip.
+
+77
+00:03:52,867 --> 00:03:56,539
+But here's the catch. Those numbers have to come from somewhere.
+
+78
+00:03:56,539 --> 00:04:00,096
+And the different kinds of memory on the GPU form a hierarchy,
+
+79
+00:04:00,096 --> 00:04:02,793
+with a brutal trade-off between size and speed.
+
+80
+00:04:03,033 --> 00:04:05,046
+At the top are the registers,
+
+81
+00:04:05,046 --> 00:04:09,348
+tiny but instantaneous. Then the shared memory inside each SM.
+
+82
+00:04:09,348 --> 00:04:11,916
+Then the L2 cache. And at the bottom,
+
+83
+00:04:11,916 --> 00:04:13,720
+the 80 gigabytes of H B M,
+
+84
+00:04:13,720 --> 00:04:18,994
+which can deliver data at about three point three five terabytes per second.
+
+85
+00:04:19,233 --> 00:04:21,979
+That sounds fast, but compare it to the compute.
+
+86
+00:04:21,979 --> 00:04:26,898
+A thousand teraflops divided by three point three five terabytes per second means that
+
+87
+00:04:26,898 --> 00:04:28,899
+for every byte you pull from H B M,
+
+88
+00:04:28,899 --> 00:04:31,645
+the GPU could do about three hundred operations.
+
+89
+00:04:31,645 --> 00:04:33,475
+Do less work than that per byte,
+
+90
+00:04:33,475 --> 00:04:35,763
+and the arithmetic units just sit there,
+
+91
+00:04:35,763 --> 00:04:36,735
+waiting for data.
+
+92
+00:04:39,967 --> 00:04:42,597
+This ratio, operations performed per byte moved,
+
+93
+00:04:42,597 --> 00:04:47,475
+is called arithmetic intensity, and it's the single most useful number for thinking about
+
+94
+00:04:47,475 --> 00:04:48,352
+GPU performance.
+
+95
+00:04:48,600 --> 00:04:53,610
+Take matrix multiplication again. If every output entry naively went back to main memory
+
+96
+00:04:53,610 --> 00:04:55,887
+to fetch its own row and its own column,
+
+97
+00:04:55,887 --> 00:04:58,619
+the same numbers would be fetched over and over,
+
+98
+00:04:58,619 --> 00:05:00,669
+and the intensity would be terrible.
+
+99
+00:05:00,900 --> 00:05:04,647
+Instead, well-written GPU code uses a technique called tiling.
+
+100
+00:05:04,647 --> 00:05:08,939
+A thread block loads one square tile of each input matrix into the fast
+
+101
+00:05:08,939 --> 00:05:13,835
+shared memory, just once. Then every thread in the block reuses those values many
+
+102
+00:05:13,835 --> 00:05:17,885
+times, accumulating partial results for a whole tile of the output.
+
+103
+00:05:17,885 --> 00:05:20,544
+Then it slides on to the next pair of tiles.
+
+104
+00:05:20,767 --> 00:05:24,593
+The bigger the tile, the more reuse you get out of every byte.
+
+105
+00:05:24,593 --> 00:05:25,766
+For an n by n tile,
+
+106
+00:05:25,766 --> 00:05:28,420
+you move on the order of n squared numbers,
+
+107
+00:05:28,420 --> 00:05:31,012
+but do on the order of n cubed operations.
+
+108
+00:05:31,012 --> 00:05:34,037
+So the intensity grows with the size of the tile.
+
+109
+00:05:34,267 --> 00:05:38,373
+A nice way to picture all of this is with what's called a roofline
+
+110
+00:05:38,373 --> 00:05:41,545
+plot. On the horizontal axis, arithmetic intensity.
+
+111
+00:05:41,545 --> 00:05:45,029
+On the vertical axis, the actual throughput you achieve.
+
+112
+00:05:45,267 --> 00:05:48,575
+At low intensity you're limited by memory bandwidth.
+
+113
+00:05:48,575 --> 00:05:51,438
+Your speed is just bandwidth times intensity:
+
+114
+00:05:51,438 --> 00:05:56,018
+this slanted line. At high intensity you hit the ceiling of how fast the
+
+115
+00:05:56,018 --> 00:05:58,881
+chip can compute. The corner where they meet,
+
+116
+00:05:58,881 --> 00:06:02,316
+around three hundred operations per byte for the H100,
+
+117
+00:06:02,316 --> 00:06:03,970
+is called the ridge point.
+
+118
+00:06:04,200 --> 00:06:06,467
+Everything to the left is memory-bound.
+
+119
+00:06:06,467 --> 00:06:08,849
+Everything to the right is compute-bound.
+
+120
+00:06:08,849 --> 00:06:13,208
+Keep this picture in mind, because the story of LLM inference is really the
+
+121
+00:06:13,208 --> 00:06:16,869
+story of where on this plot each part of the computation lands.
+
+122
+00:06:20,096 --> 00:06:23,348
+Quick refresher on what a language model actually computes.
+
+123
+00:06:23,348 --> 00:06:25,388
+If you've seen how transformers work,
+
+124
+00:06:25,388 --> 00:06:26,601
+this will be familiar.
+
+125
+00:06:26,829 --> 00:06:28,663
+The text is broken into tokens,
+
+126
+00:06:28,663 --> 00:06:31,917
+and each token is turned into a long vector of numbers.
+
+127
+00:06:31,917 --> 00:06:34,757
+These vectors flow through a sequence of layers.
+
+128
+00:06:34,757 --> 00:06:39,963
+In each layer, an attention block lets the vectors exchange information with each other,
+
+129
+00:06:39,963 --> 00:06:43,809
+and a multilayer perceptron block updates each vector on its own.
+
+130
+00:06:44,029 --> 00:06:48,930
+At the end, the last vector is turned into a probability distribution over every
+
+131
+00:06:48,930 --> 00:06:51,136
+possible next token. One is sampled,
+
+132
+00:06:51,136 --> 00:06:54,322
+appended to the text, and the whole process repeats.
+
+133
+00:06:54,563 --> 00:06:58,453
+Notice that almost every step here is a matrix multiplication:
+
+134
+00:06:58,453 --> 00:07:00,460
+a big matrix of learned weights,
+
+135
+00:07:00,460 --> 00:07:04,162
+multiplied by the token vectors. The attention projections,
+
+136
+00:07:04,162 --> 00:07:06,546
+the MLP layers, the final unembedding.
+
+137
+00:07:06,546 --> 00:07:08,617
+All weights. All matrix products.
+
+138
+00:07:08,863 --> 00:07:11,057
+And there are a lot of weights.
+
+139
+00:07:11,057 --> 00:07:14,809
+An open model like Llama 3 with 8 billion parameters,
+
+140
+00:07:14,809 --> 00:07:17,712
+at two bytes each, takes up 16 gigabytes,
+
+141
+00:07:17,712 --> 00:07:20,190
+and frontier models are far larger.
+
+142
+00:07:20,190 --> 00:07:25,712
+For our running example, let's put that 8 billion parameter model on one H100.
+
+143
+00:07:28,929 --> 00:07:31,881
+Generating a response actually happens in two very different phases.
+
+144
+00:07:32,929 --> 00:07:35,651
+First comes prefill: reading your prompt,
+
+145
+00:07:35,651 --> 00:07:39,435
+say, a thousand tokens. Since they're all known up front,
+
+146
+00:07:39,435 --> 00:07:41,692
+they can be processed in parallel.
+
+147
+00:07:41,692 --> 00:07:47,401
+Each weight matrix multiplies a big matrix holding all thousand token vectors at once.
+
+148
+00:07:47,629 --> 00:07:52,388
+That means every weight we load from memory gets reused a thousand times.
+
+149
+00:07:52,388 --> 00:07:58,385
+The arithmetic intensity is high, and prefill lands comfortably on the compute-bound side of
+
+150
+00:07:58,385 --> 00:08:01,840
+the roofline. The GPU is doing what it was built for.
+
+151
+00:08:02,063 --> 00:08:04,651
+Then comes decode, generating the answer.
+
+152
+00:08:04,651 --> 00:08:08,944
+And here's the problem. Each new token depends on the one before it,
+
+153
+00:08:08,944 --> 00:08:11,595
+so they have to be produced one at a time.
+
+154
+00:08:11,595 --> 00:08:15,699
+Each step multiplies the weight matrices by just a single vector.
+
+155
+00:08:15,929 --> 00:08:19,897
+To do that, the GPU has to stream every one of those 16 gigabytes
+
+156
+00:08:19,897 --> 00:08:22,705
+of weights out of H B M and through the S M's.
+
+157
+00:08:22,705 --> 00:08:24,964
+And for each weight, a pair of bytes,
+
+158
+00:08:24,964 --> 00:08:27,528
+it does just two operations: one multiply,
+
+159
+00:08:27,528 --> 00:08:30,763
+one add. That's an arithmetic intensity of about one.
+
+160
+00:08:30,763 --> 00:08:33,327
+Way, way down at the left of the roofline.
+
+161
+00:08:33,563 --> 00:08:38,802
+Let's put numbers on it. Reading 16 gigabytes at 3.35 terabytes per second takes
+
+162
+00:08:38,802 --> 00:08:41,486
+about five milliseconds. The math itself,
+
+163
+00:08:41,486 --> 00:08:47,053
+around 16 billion operations, would take the tensor cores about sixteen microseconds.
+
+164
+00:08:47,053 --> 00:08:52,095
+So during decode, the compute units are idle more than ninety nine percent of
+
+165
+00:08:52,095 --> 00:08:52,684
+the time.
+
+166
+00:08:52,929 --> 00:08:54,645
+This sets a hard speed limit.
+
+167
+00:08:54,645 --> 00:08:56,419
+No matter how clever the code,
+
+168
+00:08:56,419 --> 00:09:00,619
+one user on this setup can never get more than about two hundred tokens
+
+169
+00:09:00,619 --> 00:09:05,233
+per second. The speed of text generation is fundamentally the speed of memory.
+
+170
+00:09:08,460 --> 00:09:11,748
+So how do companies serve millions of people with such hardware?
+
+171
+00:09:11,748 --> 00:09:13,084
+The key trick is batching.
+
+172
+00:09:13,326 --> 00:09:17,604
+If a hundred different users are each waiting for their next token,
+
+173
+00:09:17,604 --> 00:09:22,073
+the server can stack their hundred vectors side by side into a matrix.
+
+174
+00:09:22,073 --> 00:09:24,818
+Now each weight is loaded from memory once,
+
+175
+00:09:24,818 --> 00:09:26,414
+but used a hundred times.
+
+176
+00:09:26,660 --> 00:09:30,038
+Since the time per step was dominated by reading the weights,
+
+177
+00:09:30,038 --> 00:09:33,637
+processing a hundred users costs barely more than processing one.
+
+178
+00:09:33,637 --> 00:09:36,351
+Throughput grows almost linearly with batch size,
+
+179
+00:09:36,351 --> 00:09:39,119
+and the point on the roofline slides to the right,
+
+180
+00:09:39,119 --> 00:09:40,061
+toward the ridge.
+
+181
+00:09:40,293 --> 00:09:44,294
+In practice, requests arrive and finish at different times,
+
+182
+00:09:44,294 --> 00:09:47,143
+so modern servers use continuous batching:
+
+183
+00:09:47,143 --> 00:09:49,855
+at every step, finished sequences leave,
+
+184
+00:09:49,855 --> 00:09:52,975
+and waiting requests jump into the open slots,
+
+185
+00:09:52,975 --> 00:09:54,399
+keeping the GPU full.
+
+186
+00:09:54,626 --> 00:09:57,147
+But batching runs into a second memory problem,
+
+187
+00:09:57,147 --> 00:09:59,720
+and to see it, we need to look inside attention.
+
+188
+00:10:02,960 --> 00:10:06,310
+Remember that in attention, each token produces a query,
+
+189
+00:10:06,310 --> 00:10:10,497
+a key, and a value. The new token's query is compared against the keys
+
+190
+00:10:10,497 --> 00:10:15,342
+of every previous token, and those comparisons decide how to weight their values.
+
+191
+00:10:15,560 --> 00:10:19,999
+During decode, the keys and values of earlier tokens never change.
+
+192
+00:10:19,999 --> 00:10:22,891
+So rather than recomputing them every step,
+
+193
+00:10:22,891 --> 00:10:25,312
+we compute them once and store them.
+
+194
+00:10:25,312 --> 00:10:27,263
+This is called the K V cache.
+
+195
+00:10:27,493 --> 00:10:30,570
+How big is it? For our 8 billion parameter model,
+
+196
+00:10:30,570 --> 00:10:32,830
+each token stores a key and a value,
+
+197
+00:10:32,830 --> 00:10:36,661
+in each of 32 layers, for 8 key-value heads of dimension 128,
+
+198
+00:10:36,661 --> 00:10:40,868
+at two bytes each. That comes out to about 128 kilobytes per token.
+
+199
+00:10:42,293 --> 00:10:45,536
+That doesn't sound like much, until you multiply it out.
+
+200
+00:10:45,536 --> 00:10:50,343
+A single conversation with eight thousand tokens of context needs about a gigabyte.
+
+201
+00:10:50,343 --> 00:10:54,282
+A batch of sixty four such conversations needs sixty four gigabytes,
+
+202
+00:10:54,282 --> 00:10:57,235
+four times as much as the model weights themselves!
+
+203
+00:10:57,460 --> 00:11:01,668
+And at every decode step, that entire cache has to be read from memory
+
+204
+00:11:01,668 --> 00:11:04,975
+too. So the K V cache limits how big your batch can be,
+
+205
+00:11:04,975 --> 00:11:06,899
+and it adds more memory traffic:
+
+206
+00:11:06,899 --> 00:11:09,424
+the exact resource we're already short on.
+
+207
+00:11:09,660 --> 00:11:13,444
+Early serving systems also wasted a lot of this memory,
+
+208
+00:11:13,444 --> 00:11:18,811
+reserving one big contiguous chunk for each request's maximum possible length.
+
+209
+00:11:18,811 --> 00:11:23,833
+v L L M's Paged Attention fixed this with an idea borrowed from operating
+
+210
+00:11:23,833 --> 00:11:26,310
+systems: split the cache into small,
+
+211
+00:11:26,310 --> 00:11:29,751
+fixed size pages that can live anywhere in memory,
+
+212
+00:11:29,751 --> 00:11:33,328
+and keep a table of where each sequence's pages are.
+
+213
+00:11:33,328 --> 00:11:37,663
+Almost nothing is wasted, so many more requests fit in a batch.
+
+214
+00:11:40,893 --> 00:11:44,694
+There's one more place where attention fights against the memory hierarchy,
+
+215
+00:11:44,694 --> 00:11:46,823
+especially during prefill on long prompts.
+
+216
+00:11:47,060 --> 00:11:51,432
+Computing attention naively means forming the full grid of scores,
+
+217
+00:11:51,432 --> 00:11:55,141
+every query against every key. For a prompt of N tokens,
+
+218
+00:11:55,141 --> 00:11:56,731
+that's an N by N matrix.
+
+219
+00:11:56,731 --> 00:12:01,037
+The straightforward approach writes this whole grid out to H B M,
+
+220
+00:12:01,037 --> 00:12:03,355
+reads it back to apply the softmax,
+
+221
+00:12:03,355 --> 00:12:07,860
+writes it out again, then reads it back once more to multiply by the
+
+222
+00:12:07,860 --> 00:12:08,324
+values.
+
+223
+00:12:08,560 --> 00:12:10,870
+For long contexts this grid is enormous,
+
+224
+00:12:10,870 --> 00:12:14,567
+and all that back and forth traffic with H B M dominates the run
+
+225
+00:12:14,567 --> 00:12:14,855
+time.
+
+226
+00:12:15,093 --> 00:12:19,552
+FlashAttention restructures the computation using the same tiling idea from before.
+
+227
+00:12:19,552 --> 00:12:21,862
+Load a block of queries into shared memory.
+
+228
+00:12:21,862 --> 00:12:25,086
+Then stream through the keys and values one block at a time,
+
+229
+00:12:25,086 --> 00:12:27,074
+computing that small patch of scores,
+
+230
+00:12:27,074 --> 00:12:29,330
+and folding it into the output right away.
+
+231
+00:12:29,560 --> 00:12:31,505
+The tricky part is the softmax,
+
+232
+00:12:31,505 --> 00:12:35,647
+which normally needs to see an entire row before it can normalize.
+
+233
+00:12:35,647 --> 00:12:39,914
+The solution: keep a running maximum and a running sum for each row.
+
+234
+00:12:39,914 --> 00:12:42,801
+Whenever a new block reveals a larger maximum,
+
+235
+00:12:42,801 --> 00:12:45,938
+you simply rescale what you've accumulated so far.
+
+236
+00:12:45,938 --> 00:12:48,260
+The final answer is exactly the same,
+
+237
+00:12:48,260 --> 00:12:51,712
+but the giant N by N matrix never touches H B M at all.
+
+238
+00:12:51,960 --> 00:12:54,642
+Same math, a fraction of the memory traffic,
+
+239
+00:12:54,642 --> 00:12:59,396
+and often several times faster. It's a beautiful example of a recurring theme:
+
+240
+00:12:59,396 --> 00:13:04,394
+on modern hardware, the cleverest algorithm is often the one that moves the fewest
+
+241
+00:13:04,394 --> 00:13:04,760
+bytes.
+
+242
+00:13:07,988 --> 00:13:10,248
+Once you see the world in terms of bytes moved,
+
+243
+00:13:10,248 --> 00:13:13,421
+a lot of the other tricks in modern inference start to make sense.
+
+244
+00:13:13,655 --> 00:13:16,490
+Quantization stores each weight with fewer bits:
+
+245
+00:13:16,490 --> 00:13:19,090
+say eight, or even four, instead of sixteen.
+
+246
+00:13:19,090 --> 00:13:22,162
+Fewer bytes to read per token means faster decoding,
+
+247
+00:13:22,162 --> 00:13:23,816
+almost in direct proportion.
+
+248
+00:13:24,055 --> 00:13:28,815
+Speculative decoding uses a small, fast draft model to guess the next several tokens.
+
+249
+00:13:28,815 --> 00:13:32,399
+The big model then checks all of those guesses in a single pass.
+
+250
+00:13:32,399 --> 00:13:35,815
+Since checking several tokens at once is like a tiny prefill,
+
+251
+00:13:35,815 --> 00:13:38,167
+it costs about the same as generating one.
+
+252
+00:13:38,167 --> 00:13:41,975
+Every guess that turns out right is a token you got nearly for free.
+
+253
+00:13:42,221 --> 00:13:44,367
+And for models too large for one chip,
+
+254
+00:13:44,367 --> 00:13:46,569
+the weights are split across many GPUs,
+
+255
+00:13:46,569 --> 00:13:48,772
+connected by very high bandwidth links,
+
+256
+00:13:48,772 --> 00:13:51,651
+so that each chip only has to stream its own slice.
+
+257
+00:13:51,888 --> 00:13:55,542
+So next time you watch an answer stream onto your screen,
+
+258
+00:13:55,542 --> 00:13:58,298
+picture what's underneath. For every token,
+
+259
+00:13:58,298 --> 00:14:01,952
+billions of weights flow up out of high bandwidth memory,
+
+260
+00:14:01,952 --> 00:14:06,374
+into thousands of tiny arithmetic units that finish almost instantly,
+
+261
+00:14:06,374 --> 00:14:07,849
+and then wait for more.
+
+262
+00:14:08,155 --> 00:14:10,413
+The math was never really the hard part.
+
+263
+00:14:10,413 --> 00:14:11,995
+The hard part is feeding it.
