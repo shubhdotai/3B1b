@@ -1,0 +1,31 @@
+Every time an AI chatbot writes a word, billions of numbers stream out of GPU memory, and the chip's arithmetic units spend most of that time waiting. This video opens up a modern GPU (an NVIDIA H100) and walks through how large language model inference actually runs on it, from Tensor Cores and the memory hierarchy to prefill vs decode, batching, the KV cache and FlashAttention.
+
+The big idea: for text generation, the bottleneck usually isn't the math. It's moving bytes.
+
+CHAPTERS
+0:00 Intro
+0:48 CPU vs GPU
+2:08 Inside a GPU (SMs, Tensor Cores, memory hierarchy)
+4:37 Feeding the beast: arithmetic intensity & the roofline
+6:17 What an LLM computes
+7:26 Prefill and decode
+9:06 Batching
+10:00 The KV cache & PagedAttention
+11:38 FlashAttention
+13:05 Thinking in bytes: quantization, speculative decoding, multi-GPU
+
+KEY NUMBERS (NVIDIA H100 SXM, Llama-3-8B-shaped model in 16-bit)
+• ~1,000 TFLOP/s dense BF16 compute vs 3.35 TB/s HBM bandwidth → ~300 FLOPs per byte at the ridge point
+• 8B parameters × 2 bytes = 16 GB of weights
+• One decode step: ~4.8 ms to read the weights vs ~0.016 ms of math → at most ~210 tokens/s for a single user
+• KV cache: 2 × 32 layers × 8 KV heads × 128 dims × 2 bytes ≈ 128 KB per token
+
+FURTHER READING
+• FlashAttention (Dao et al., 2022): https://arxiv.org/abs/2205.14135
+• PagedAttention / vLLM (Kwon et al., 2023): https://arxiv.org/abs/2309.06180
+• Speculative decoding (Leviathan et al., 2022): https://arxiv.org/abs/2211.17192
+• Roofline model (Williams, Waterman & Patterson, Communications of the ACM, 2009)
+
+Animated with Manim, in a style inspired by 3Blue1Brown. Narration voiced with ElevenLabs.
+
+#GPU #LLM #MachineLearning #AI #DeepLearning #Nvidia #Transformers
