@@ -1,0 +1,6 @@
+media/
+__pycache__/
+*.pyc
+.env
+*.key
+output/*.srt.tmp
