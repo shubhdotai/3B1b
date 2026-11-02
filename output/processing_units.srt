@@ -1,0 +1,527 @@
+1
+00:00:00,000 --> 00:00:04,176
+A single CPU core ticks about four billion times per second.
+
+2
+00:00:04,176 --> 00:00:09,535
+An NVIDIA H100 GPU does about a thousand trillion math operations per second.
+
+3
+00:00:09,535 --> 00:00:13,919
+A Cerebras wafer moves twenty one petabytes of data per second.
+
+4
+00:00:13,919 --> 00:00:16,355
+Each of these is a processing unit,
+
+5
+00:00:16,355 --> 00:00:19,069
+and each exists for a different reason.
+
+6
+00:00:19,300 --> 00:00:23,857
+Here are nine of them, with real numbers:
+
+7
+00:00:23,857 --> 00:00:28,858
+CPU, GPU, TPU, NPU, LPU, wafer-scale engines,
+
+8
+00:00:28,858 --> 00:00:31,081
+FPGA, ASIC, and DPU.
+
+9
+00:00:31,300 --> 00:00:34,077
+To compare them, we'll use one yardstick.
+
+10
+00:00:34,077 --> 00:00:36,042
+When an AI model writes text,
+
+11
+00:00:36,042 --> 00:00:40,784
+every new word requires reading every weight of the model from memory.
+
+12
+00:00:40,784 --> 00:00:42,749
+So the speed limit is simple:
+
+13
+00:00:42,749 --> 00:00:45,458
+memory bandwidth, divided by model size.
+
+14
+00:00:45,700 --> 00:00:48,056
+Our test model: 8 billion parameters,
+
+15
+00:00:48,056 --> 00:00:52,831
+stored at one byte each. That's 8 gigabytes to read for every single token.
+
+16
+00:00:53,667 --> 00:00:55,664
+The CPU: a few dozen big,
+
+17
+00:00:55,664 --> 00:01:00,696
+smart cores. A server chip like AMD's EPYC 9654 has 96 of them:
+
+18
+00:01:00,696 --> 00:01:03,572
+twelve chiplets of eight cores each,
+
+19
+00:01:03,572 --> 00:01:06,049
+running at up to 3.7 gigahertz.
+
+20
+00:01:06,267 --> 00:01:10,822
+Each core is built to finish one stream of instructions as fast as possible.
+
+21
+00:01:10,822 --> 00:01:13,160
+It predicts which way branches will go,
+
+22
+00:01:13,160 --> 00:01:17,595
+runs instructions out of order, and keeps 384 megabytes of cache close by.
+
+23
+00:01:17,595 --> 00:01:19,333
+That makes it great at messy,
+
+24
+00:01:19,333 --> 00:01:22,990
+unpredictable work: operating systems, databases, game logic,
+
+25
+00:01:22,990 --> 00:01:23,769
+your browser.
+
+26
+00:01:24,000 --> 00:01:28,756
+For raw math it's limited: about ten teraflops across all 96 cores,
+
+27
+00:01:28,756 --> 00:01:32,660
+roughly a hundred times less than a GPU's matrix units.
+
+28
+00:01:32,660 --> 00:01:35,357
+Its memory is twelve channels of DDR5,
+
+29
+00:01:35,357 --> 00:01:37,558
+about 460 gigabytes per second.
+
+30
+00:01:37,800 --> 00:01:39,800
+Divide by our 8 gigabyte model,
+
+31
+00:01:39,800 --> 00:01:42,317
+and you get about 57 tokens per second,
+
+32
+00:01:42,317 --> 00:01:44,252
+at best. Usable, but not fast.
+
+33
+00:01:45,100 --> 00:01:48,400
+The GPU: instead of a few smart cores,
+
+34
+00:01:48,400 --> 00:01:53,350
+thousands of simple ones. The H100 has 16,896 CUDA cores,
+
+35
+00:01:53,350 --> 00:02:01,427
+grouped into 132 streaming multiprocessors, plus 528 Tensor Cores built only for matrix math.
+
+36
+00:02:01,667 --> 00:02:03,943
+Threads run in groups of 32 called warps,
+
+37
+00:02:03,943 --> 00:02:06,885
+all executing the same instruction on different data.
+
+38
+00:02:06,885 --> 00:02:10,437
+That's terrible for branchy code, where half the warp sits idle,
+
+39
+00:02:10,437 --> 00:02:12,935
+but perfect for graphics and neural networks,
+
+40
+00:02:12,935 --> 00:02:15,877
+where you do the same multiply-add millions of times.
+
+41
+00:02:16,100 --> 00:02:20,326
+The numbers: about 990 teraflops of 16-bit matrix math,
+
+42
+00:02:20,326 --> 00:02:25,473
+80 gigabytes of high bandwidth memory at 3.35 terabytes per second,
+
+43
+00:02:25,473 --> 00:02:26,549
+and 700 watts.
+
+44
+00:02:26,767 --> 00:02:33,690
+Yardstick: 3.35 terabytes per second over 8 gigabytes is about 420 tokens per second.
+
+45
+00:02:33,690 --> 00:02:37,763
+Seven times the CPU, and mostly because of memory,
+
+46
+00:02:37,763 --> 00:02:38,496
+not math.
+
+47
+00:02:39,332 --> 00:02:42,058
+The TPU, Google's Tensor Processing Unit.
+
+48
+00:02:42,058 --> 00:02:44,652
+It isn't a general-purpose chip at all.
+
+49
+00:02:44,652 --> 00:02:48,109
+It's built around one structure: the systolic array.
+
+50
+00:02:48,332 --> 00:02:52,519
+Picture a 128 by 128 grid of multiply-accumulate cells.
+
+51
+00:02:52,519 --> 00:02:57,619
+Weights sit inside the cells. Input numbers pulse in from the left,
+
+52
+00:02:57,619 --> 00:03:01,197
+one step per clock, and partial sums flow down.
+
+53
+00:03:01,197 --> 00:03:05,231
+Every value gets reused across a whole row or column,
+
+54
+00:03:05,231 --> 00:03:07,819
+without ever going back to memory.
+
+55
+00:03:08,065 --> 00:03:13,575
+That's why it's efficient: almost no energy goes into fetching data.
+
+56
+00:03:13,575 --> 00:03:17,869
+A TPU v5e chip delivers 197 teraflops of 16-bit math,
+
+57
+00:03:17,869 --> 00:03:22,407
+with 16 gigabytes of memory at 819 gigabytes per second.
+
+58
+00:03:22,632 --> 00:03:26,038
+Yardstick: about 100 tokens per second per chip.
+
+59
+00:03:26,038 --> 00:03:30,083
+But TPUs are meant to be used in pods of up to 256 chips,
+
+60
+00:03:30,083 --> 00:03:32,141
+wired directly to each other.
+
+61
+00:03:32,965 --> 00:03:35,228
+The NPU, or Neural Processing Unit,
+
+62
+00:03:35,228 --> 00:03:38,396
+is the AI block inside your phone or laptop chip.
+
+63
+00:03:38,396 --> 00:03:40,529
+Apple calls it the Neural Engine.
+
+64
+00:03:40,529 --> 00:03:43,309
+Qualcomm, Intel and AMD all have their own.
+
+65
+00:03:43,531 --> 00:03:46,667
+It does the same kind of matrix math as a TPU,
+
+66
+00:03:46,667 --> 00:03:51,370
+but tuned for low power, using 8-bit and 4-bit numbers instead of 16.
+
+67
+00:03:51,370 --> 00:03:56,823
+The NPU in Qualcomm's Snapdragon X Elite does 45 trillion operations per second,
+
+68
+00:03:56,823 --> 00:03:58,186
+on just a few watts.
+
+69
+00:03:58,431 --> 00:04:00,821
+That's what runs face unlock, live captions,
+
+70
+00:04:00,821 --> 00:04:03,157
+photo cleanup and background blur on calls,
+
+71
+00:04:03,157 --> 00:04:06,634
+without draining your battery or sending your data to the cloud.
+
+72
+00:04:06,865 --> 00:04:11,511
+Yardstick: laptop memory runs at about 135 gigabytes per second,
+
+73
+00:04:11,511 --> 00:04:15,939
+so our 8 gigabyte model tops out around 17 tokens per second.
+
+74
+00:04:15,939 --> 00:04:20,657
+Small models run on device. Big ones still go to the data center.
+
+75
+00:04:21,498 --> 00:04:24,354
+The LPU, Groq's Language Processing Unit,
+
+76
+00:04:24,354 --> 00:04:26,792
+attacks the memory problem head on.
+
+77
+00:04:26,792 --> 00:04:29,091
+It has no external memory at all.
+
+78
+00:04:29,091 --> 00:04:32,295
+Each chip holds 230 megabytes of on-chip SRAM,
+
+79
+00:04:32,295 --> 00:04:34,803
+readable at 80 terabytes per second:
+
+80
+00:04:34,803 --> 00:04:37,798
+about 24 times the H100's memory bandwidth.
+
+81
+00:04:38,031 --> 00:04:40,217
+The catch: 230 megabytes is tiny.
+
+82
+00:04:40,217 --> 00:04:44,192
+A 70 billion parameter model needs about 300 of these chips,
+
+83
+00:04:44,192 --> 00:04:49,424
+chained together, with a compiler scheduling every data movement ahead of time,
+
+84
+00:04:49,424 --> 00:04:51,014
+down to the clock cycle.
+
+85
+00:04:51,231 --> 00:04:54,304
+Cerebras takes the idea to the extreme.
+
+86
+00:04:54,304 --> 00:04:58,873
+Instead of cutting a silicon wafer into hundreds of chips,
+
+87
+00:04:58,873 --> 00:05:01,788
+it keeps the whole wafer as one chip:
+
+88
+00:05:01,788 --> 00:05:05,728
+46,225 square millimeters, 4 trillion transistors,
+
+89
+00:05:05,728 --> 00:05:11,006
+900,000 cores, and 44 gigabytes of SRAM at 21 petabytes per second.
+
+90
+00:05:11,231 --> 00:05:17,114
+The payoff is speed. Cerebras has reported around 1,800 tokens per second on Llama
+
+91
+00:05:17,114 --> 00:05:20,557
+3.1 8B, several times what a single GPU manages.
+
+92
+00:05:21,398 --> 00:05:23,762
+The FPGA, or Field-Programmable Gate Array,
+
+93
+00:05:23,762 --> 00:05:27,171
+is hardware you can rewire. It's a sea of small lookup tables,
+
+94
+00:05:27,171 --> 00:05:30,800
+flip-flops and math blocks, with programmable wiring between them.
+
+95
+00:05:30,800 --> 00:05:35,034
+Load a new configuration file, and the same chip becomes a different circuit.
+
+96
+00:05:35,265 --> 00:05:38,590
+That gives you custom hardware without building a chip:
+
+97
+00:05:38,590 --> 00:05:43,305
+sub-microsecond latency for high-frequency trading, network packet processing,
+
+98
+00:05:43,305 --> 00:05:46,327
+and prototyping chips before they're manufactured.
+
+99
+00:05:46,327 --> 00:05:49,350
+The cost: clock speeds of a few hundred megahertz,
+
+100
+00:05:49,350 --> 00:05:51,043
+and much harder programming.
+
+101
+00:05:51,265 --> 00:05:55,030
+The ASIC, or Application-Specific Integrated Circuit,
+
+102
+00:05:55,030 --> 00:05:58,724
+is the opposite: a chip that does exactly one thing,
+
+103
+00:05:58,724 --> 00:06:00,998
+permanently. The TPU is an ASIC.
+
+104
+00:06:00,998 --> 00:06:06,610
+So is a Bitcoin miner. An Antminer S21 computes 200 trillion hashes per second,
+
+105
+00:06:06,610 --> 00:06:10,021
+something no CPU or GPU comes close to per watt.
+
+106
+00:06:10,265 --> 00:06:12,282
+The trade-off is cost and time.
+
+107
+00:06:12,282 --> 00:06:17,291
+A cutting-edge ASIC can cost tens of millions of dollars and years to design,
+
+108
+00:06:17,291 --> 00:06:20,609
+and if the algorithm changes, the chip is obsolete.
+
+109
+00:06:21,431 --> 00:06:24,127
+Last, the DPU, or Data Processing Unit.
+
+110
+00:06:24,127 --> 00:06:28,482
+In a data center, a lot of CPU time goes to moving data around:
+
+111
+00:06:28,482 --> 00:06:32,560
+networking, storage, encryption. A DPU takes that job over.
+
+112
+00:06:32,798 --> 00:06:38,676
+NVIDIA's BlueField-3 combines a 400 gigabit per second network interface with 16 Arm cores
+
+113
+00:06:38,676 --> 00:06:41,810
+and hardware engines for encryption and storage,
+
+114
+00:06:41,810 --> 00:06:42,855
+all on one card.
+
+115
+00:06:43,098 --> 00:06:47,799
+In AI clusters, where thousands of GPUs constantly exchange data,
+
+116
+00:06:47,799 --> 00:06:50,186
+the DPU keeps the network moving,
+
+117
+00:06:50,186 --> 00:06:53,730
+so the CPUs and GPUs can focus on their own work.
+
+118
+00:06:54,565 --> 00:06:56,991
+So here's the lineup by memory bandwidth,
+
+119
+00:06:56,991 --> 00:06:59,831
+the number that decides how fast text comes out.
+
+120
+00:06:59,831 --> 00:07:02,553
+From a laptop NPU at 135 gigabytes per second,
+
+121
+00:07:02,553 --> 00:07:05,334
+to a Cerebras wafer at 21 petabytes per second.
+
+122
+00:07:05,334 --> 00:07:08,175
+That's a range of over a hundred thousand times.
+
+123
+00:07:08,398 --> 00:07:11,367
+And by job: the CPU for logic and control.
+
+124
+00:07:11,367 --> 00:07:15,822
+The GPU for parallel math. The TPU and NPU for neural networks,
+
+125
+00:07:15,822 --> 00:07:18,155
+in the data center and on device.
+
+126
+00:07:18,155 --> 00:07:22,185
+The LPU and wafer-scale engines for very fast generation.
+
+127
+00:07:22,185 --> 00:07:26,214
+FPGAs for custom low-latency circuits. ASICs for one job,
+
+128
+00:07:26,214 --> 00:07:29,113
+done perfectly. And DPUs for moving data.
+
+129
+00:07:29,331 --> 00:07:32,909
+Every one of them is a different answer to the same question:
+
+130
+00:07:32,909 --> 00:07:35,021
+where do you spend your transistors?
+
+131
+00:07:35,021 --> 00:07:36,781
+On smart control, on raw math,
+
+132
+00:07:36,781 --> 00:07:38,892
+or on memory right next to the math.

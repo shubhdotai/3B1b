@@ -1,0 +1,30 @@
+CPU, GPU, TPU, NPU, LPU, wafer-scale engine, FPGA, ASIC and DPU: what each one actually is, explained with real specs instead of buzzwords. One yardstick runs through the whole video: how fast each chip could generate text with an 8-billion-parameter AI model, which comes down to memory bandwidth ÷ model size.
+
+CHAPTERS
+0:00 The yardstick: tokens/s ≈ bandwidth ÷ model size
+0:53 CPU: 96 cores, 460 GB/s → ~57 tokens/s
+1:45 GPU: 990 TFLOP/s, 3.35 TB/s → ~420 tokens/s
+2:39 TPU: systolic arrays, 819 GB/s → ~100 tokens/s per chip
+3:32 NPU: 45 TOPS on a few watts → ~17 tokens/s
+4:21 LPU: 230 MB SRAM per chip at 80 TB/s
+4:50 Wafer-scale engine: 44 GB SRAM at 21 PB/s
+5:21 FPGA: hardware you can rewire
+5:50 ASIC: one job, 200 trillion hashes per second
+6:21 DPU: 400 Gb/s of data-center plumbing
+6:54 The lineup
+
+CHIPS USED AS EXAMPLES
+• CPU: AMD EPYC 9654 (96 cores, 12-channel DDR5, 384 MB L3, 360 W)
+• GPU: NVIDIA H100 SXM (16,896 CUDA cores, 528 Tensor Cores, 80 GB HBM3, 700 W)
+• TPU: Google TPU v5e (197 TFLOP/s BF16, 16 GB HBM, pods of 256 chips)
+• NPU: Qualcomm Snapdragon X Elite (45 TOPS INT8, ~135 GB/s LPDDR5X)
+• LPU: Groq (230 MB on-chip SRAM, 80 TB/s)
+• Wafer-scale: Cerebras WSE-3 (46,225 mm², 4 trillion transistors, 900,000 cores)
+• ASIC: Bitmain Antminer S21 (200 TH/s, 3,500 W)
+• DPU: NVIDIA BlueField-3 (400 Gb/s, 16 Arm cores)
+
+Speeds are theoretical ceilings for an 8B model stored at 8 bits (8 GB read per token); real systems land below them. Figures are vendor-published specs.
+
+Animated with Manim, in a style inspired by 3Blue1Brown. Narration voiced with ElevenLabs.
+
+#CPU #GPU #TPU #NPU #AIChips #Semiconductors #MachineLearning #LLM

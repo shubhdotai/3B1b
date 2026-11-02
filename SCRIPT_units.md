@@ -22,7 +22,7 @@ For raw math it's limited: about ten teraflops across all 96 cores, roughly a hu
 Divide by our 8 gigabyte model, and you get about 57 tokens per second, at best. Usable, but not fast.
 
 
-## GPU  (01:44)
+## GPU  (01:45)
 
 The GPU: instead of a few smart cores, thousands of simple ones. The H100 has 16,896 CUDA cores, grouped into 132 streaming multiprocessors, plus 528 Tensor Cores built only for matrix math.
 
